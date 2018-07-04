@@ -21,12 +21,13 @@ add_subdirectory(tbtxdomain)
 add_subdirectory(tbtadm)
 add_subdirectory(docs)
 
-configure_file(tests/test-integration-mock.py tests/test-integration-mock.py COPYONLY)
+configure_file(tests/test_integration_mock.py tests/test_integration_mock.py COPYONLY)
+configure_file(tests/test.py tests/test.py COPYONLY)
 configure_file(tests/Dockerfile tests/Dockerfile COPYONLY)
 
 add_custom_target(check
-	COMMAND umockdev-wrapper python3 tests/test-integration-mock.py
-	DEPENDS tests/test-integration-mock.py tbtadm
+	COMMAND python3 tests/test.py
+	DEPENDS tests/test_integration_mock.py tests/test.py tbtadm
 )
 
 set(DOCKER_IMAGE "thunderbolt-tools")

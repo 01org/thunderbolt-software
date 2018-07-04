@@ -34,6 +34,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <queue>
 #include <random>
 #include <iterator>
 #include <algorithm>
@@ -55,6 +56,7 @@ const std::string keyFilename        = "key";
 const std::string securityFilename   = "security";
 
 const std::string domain          = "domain";
+const std::string boot_acl        = "boot_acl";
 const std::string hostRouteString = "-0";
 const std::string domainDevtype   = "DEVTYPE=thunderbolt_domain";
 const std::string deviceDevtype   = "DEVTYPE=thunderbolt_device";
@@ -680,6 +682,172 @@ catch (...)
     m_err << "Unknown exception\n";
 }
 
+static void addToDomainBootACL(const fs::path& domain, const std::string uuid)
+{
+    auto boot_acl_path = domain / boot_acl;
+
+    if (!fs::exists(boot_acl_path))
+    {
+        /* Cannot find boot_acl */
+        return;
+    }
+
+    /* Read boot_acl */
+    std::stringstream stream(readAndTrim(boot_acl_path));
+    /* Check maximum allowed boot_acl string size */
+    if (stream.str().size() > 36 * 16 + 1 * 15)
+    {
+        std::cerr << "boot_acl contains too much characters\n";
+        return;
+    }
+
+    /* Queue keeps UUIDs entries for easy processing */
+    std::queue<std::string> acl_queue;
+
+    std::string substring;
+    while(getline(stream, substring, ','))
+    {
+        /* this moves also uuid to the end of the queue */
+        if (substring.size() == 36 && substring != uuid)
+        {
+            acl_queue.push(substring);
+        }
+    }
+
+    /* Add UUID to boot_acl queue */
+    if (acl_queue.size() == 16)
+    {
+        std::cout << "Trim boot_acl list, remove oldest entry\n";
+        acl_queue.pop();
+    }
+    acl_queue.push(uuid);
+
+    std::string out;
+
+    for (int i = 0; i < 16; i++)
+    {
+        if (!acl_queue.empty())
+        {
+            out.append(acl_queue.front());
+            acl_queue.pop();
+        }
+
+        if (i < 15)
+        {
+            out.append(",");
+        }
+    }
+
+    std::ofstream boot_acl_file(boot_acl_path.string());
+    boot_acl_file << out;
+    boot_acl_file.close();
+}
+
+void tbtadm::Controller::addToBootACL(const std::string uuid)
+{
+    /* For every domain in sysfs */
+    for (auto& dir : fs::directory_iterator(sysfsDevicesPath))
+    {
+        if (dir.status().type() != fs::directory_file)
+        {
+            continue;
+        }
+
+        if (!isDomain(dir.path()))
+        {
+            continue;
+        }
+
+        addToDomainBootACL(dir, uuid);
+    }
+}
+
+static void removeFromDomainBootACL(const fs::path& dm, const std::string uuid)
+{
+    auto boot_acl_path = dm / boot_acl;
+    bool amended = false;
+
+    if (!fs::exists(boot_acl_path))
+    {
+        /* Cannot find boot_acl */
+        return;
+    }
+
+    /* Read boot_acl */
+    std::stringstream stream(readAndTrim(boot_acl_path));
+    /* Check maximum allowed boot_acl string size */
+    if (stream.str().size() > 36 * 16 + 1 * 15)
+    {
+        std::cerr << "boot_acl contains too much characters\n";
+        return;
+    }
+
+    /* Queue keeps UUIDs entries for easy processing */
+    std::queue<std::string> acl_queue;
+
+    std::string substring;
+    while(getline(stream, substring, ','))
+    {
+        acl_queue.push(substring);
+    }
+
+    std::string out;
+    int i = 0;
+    while (!acl_queue.empty())
+    {
+        auto u = acl_queue.front();
+        if (u != uuid) {
+            out.append(u);
+            acl_queue.pop();
+        }
+        else
+        {
+            std::cout << "Removed UUID also from Boot ACL\n";
+            acl_queue.pop();
+            amended = true;
+            continue;
+        }
+
+        if (i++ < 15)
+        {
+            out.append(",");
+        }
+    }
+
+    if (!amended)
+    {
+        return;
+    }
+
+    while (i++ < 15)
+    {
+        out.append(",");
+    }
+
+    std::ofstream boot_acl_file(boot_acl_path.string());
+    boot_acl_file << out;
+    boot_acl_file.close();
+}
+
+void tbtadm::Controller::removeFromBootACL(const std::string uuid)
+{
+    /* For every domain in sysfs */
+    for (auto& dir : fs::directory_iterator(sysfsDevicesPath))
+    {
+        if (dir.status().type() != fs::directory_file)
+        {
+            continue;
+        }
+
+        if (!isDomain(dir.path()))
+        {
+            continue;
+        }
+
+        removeFromDomainBootACL(dir, uuid);
+    }
+}
+
 void tbtadm::Controller::addToACL(const fs::path& dir)
 {
     auto acl = acltree / readAndTrim(dir / uniqueIDFilename);
@@ -694,6 +862,8 @@ void tbtadm::Controller::addToACL(const fs::path& dir)
     fs::copy(dir / deviceFilename, acl / deviceFilename);
 
     m_out << "Added to ACL\n";
+
+    addToBootACL(acl.filename().string());
 }
 
 void tbtadm::Controller::acl()
@@ -815,7 +985,9 @@ void tbtadm::Controller::remove(std::string uuid)
     {
         m_out << "ACL entry doesn't exist\n";
     }
+
     fs::remove_all(acl);
+    removeFromBootACL(uuid);
 }
 
 // TODO: move to tbtadm-helper

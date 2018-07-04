@@ -52,6 +52,7 @@ except ImportError as e:
 # Configuration
 TBTADM = "tbtadm/tbtadm"
 ACL = "/var/lib/thunderbolt/acl"
+SYSFS = "/sys/bus/thunderbolt"
 VENDOR = "Mock Vendor"
 DEVICE_NAME = "Thunderbolt Cable"
 
@@ -281,7 +282,7 @@ class thunderbolt_test(unittest.TestCase):
         return self.extract_property(self.get_info(), "UUID")
 
     # the actual tests
-    def test_tbtadm_devices(self):
+    def test_01_tbtadm_devices(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -297,7 +298,7 @@ class thunderbolt_test(unittest.TestCase):
         tree.disconnect(self.testbed)
 
     # Get security level through tbtadm topology
-    def test_tbtadm_domain_seclevel(self):
+    def test_02_tbtadm_domain_seclevel(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -323,7 +324,7 @@ class thunderbolt_test(unittest.TestCase):
         # disconnect all devices
         tree.disconnect(self.testbed)
 
-    def test_tbtadm_authorization_sl0(self):
+    def test_03_tbtadm_authorization_sl0(self):
         # connect all device
         tree = self.authorized_mock_tree()
         tree.connect_tree(self.testbed)
@@ -383,7 +384,7 @@ class thunderbolt_test(unittest.TestCase):
         tree.disconnect(self.testbed)
 
     # Test authorization in SL1 (approve --once)
-    def test_tbtadm_authorization_sl1(self):
+    def test_04_tbtadm_authorization_sl1(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -416,7 +417,7 @@ class thunderbolt_test(unittest.TestCase):
         tree.disconnect(self.testbed)
 
     # Test authorization and ACL management in SL1 mode
-    def test_tbtadm_approve_sl1(self):
+    def test_05_tbtadm_approve_sl1(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -460,7 +461,7 @@ class thunderbolt_test(unittest.TestCase):
         tree.disconnect(self.testbed)
 
     # Test authorization in SL2 (approve --once)
-    def test_tbtadm_authorization_sl2(self):
+    def test_06_tbtadm_authorization_sl2(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -493,7 +494,7 @@ class thunderbolt_test(unittest.TestCase):
         tree.disconnect(self.testbed)
 
     # Test authorization and ACL management in SL2 mode
-    def test_tbtadm_approve_sl2(self):
+    def test_07_tbtadm_approve_sl2(self):
         # connect all device
         tree = self.default_mock_tree()
         tree.connect_tree(self.testbed)
@@ -535,27 +536,308 @@ class thunderbolt_test(unittest.TestCase):
         # Verify content of ACL directory
         ls = os.listdir(ACL + "/" + uuid)
         ls.sort()
-        self.assertTrue(ls == ['device_name', 'key','vendor_name'])
+        self.assertTrue(ls == ['device_name', 'key', 'vendor_name'])
 
         # disconnect all devices
         tree.disconnect(self.testbed)
 
     # Test multi - controller device tree
-    def test_x(self):
+    def test_08_multi_controller_topology(self):
         # connect all device
-        device1 = TbDevice("Device1")
-        device2 = TbDevice("Device2", children = [device1])
-        tree1 = TbDomain(host = TbHost([device2]))
+        device2 = TbDevice("0-101")
+        device1 = TbDevice("0-1", children = [device2])
+        tree1 = TbDomain(host = TbHost([device1]))
         tree1.connect_tree(self.testbed)
 
-        device3 = TbDevice("Device3")
-        device4 = TbDevice("Device4", children = [device3])
-        tree2 = TbDomain(host = TbHost([device4], index = 1), index = 1)
+        device3 = TbDevice("1-1")
+        tree2 = TbDomain(host = TbHost([device3], index = 1), index = 1)
         tree2.connect_tree(self.testbed)
 
         subprocess.run(shlex.split("%s topology" % TBTADM))
 
         # disconnect all devices
+        tree1.disconnect(self.testbed)
+        tree2.disconnect(self.testbed)
+
+    # Generate boot_acl comma separated string
+    def generate_boot_acl(self, *args):
+        ls = list(args)
+        for i in range(len(ls), 16):
+            ls.append('')
+
+        return ','.join(ls)
+
+    # Add UUID to comma separated string
+    def add_boot_acl(self, boot_acl, uuid):
+        ls = boot_acl.split(',')
+
+        # Remove empty uuids
+        ls = ' '.join(ls).split()
+        if len(ls) < 16:
+            ls.append(uuid)
+        else:
+            ls.pop(0)
+            ls.append(uuid)
+
+        for i in range(len(ls), 16):
+            ls.append('')
+
+        return ','.join(ls)
+
+    # Delete UUID from comma separated string
+    def del_boot_acl(self, boot_acl, uuid):
+        ls = boot_acl.split(',')
+
+        # Remove empty uuids
+        ls = ' '.join(ls).split()
+
+        # Remove element by value
+        if uuid in ls:
+            ls.remove(uuid)
+
+        for i in range(len(ls), 16):
+            ls.append('')
+
+        return ','.join(ls)
+
+    # Test preboot_acl
+    def test_09_preboot_acl(self):
+        # connect all device
+        tree = self.default_mock_tree()
+        tree.connect_tree(self.testbed)
+
+        SYSFS_BOOT_ACL = SYSFS + "/devices/domain0/boot_acl"
+
+        # Generate empty boot_acl
+        boot_acl = self.generate_boot_acl()
+        self.assertEqual(len(boot_acl.split(',')), 16)
+
+        # Add new attribute to domain tree
+        tree.testbed.set_attribute(tree.syspath, "boot_acl", boot_acl)
+
+        # Test that sysfs entry created
+        self.assertTrue(os.path.isfile(SYSFS_BOOT_ACL))
+
+        # Verify content of boot_acl
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl)
+
+        # Check security level
+        seclevel = self.get_seclevel()
+        self.assertEqual(seclevel, "SL2 (secure)")
+
+        authorized = self.get_authorized()
+        self.assertEqual(authorized, "No")
+
+        uuid = self.get_uuid()
+        self.assertNotEqual(uuid, None)
+
+        # ACL should not yet exist
+        self.assertFalse(os.path.isdir(ACL + "/" + uuid))
+
+        output = subprocess.check_output(shlex.split("%s approve 0-1" % TBTADM))
+        log.debug(output)
+
+        # Verify adding UUID to empty list
+        boot_acl_generated = self.generate_boot_acl(uuid)
+        self.assertEqual(len(boot_acl_generated.split(',')), 16)
+        log.debug(boot_acl_generated)
+
+        boot_acl_added = self.add_boot_acl(boot_acl, uuid)
+        self.assertEqual(len(boot_acl_added.split(',')), 16)
+        log.debug(boot_acl_added)
+
+        # Two ways of generation are the same ;)
+        self.assertEqual(boot_acl_generated, boot_acl_added)
+
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_generated)
+
+        # Test also removing from Boot ACL
+        output = subprocess.check_output(shlex.split("%s remove 0-1" % TBTADM))
+        log.debug(output)
+
+        boot_acl_deleted = self.del_boot_acl(boot_acl_added, uuid)
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_deleted)
+        log.debug("open boot_acl %s" % open(SYSFS_BOOT_ACL).read())
+
+        # disconnect all devices
+        tree.disconnect(self.testbed)
+
+    # Test adding and removing UUID to boot_acl with existing 16 entries
+    def test_10_preboot_acl_full_list(self):
+        # connect all device
+        UUID = '00000000-0000-0000-0000-000000000001'
+        device2 = TbDevice("0-101", uid = UUID)
+        device1 = TbDevice("0-1", children = [device2])
+        tree = TbDomain(host = TbHost([device1]))
+        tree.connect_tree(self.testbed)
+
+        SYSFS_BOOT_ACL = SYSFS + "/devices/domain0/boot_acl"
+
+        # Generate uuid comma separated list
+        boot_acl = self.generate_boot_acl(
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()))
+
+        self.assertEqual(len(boot_acl.split(',')), 16)
+        log.debug(boot_acl)
+
+        # Add new attribute to domain tree
+        tree.testbed.set_attribute(tree.syspath, "boot_acl", boot_acl)
+
+        # Test that sysfs entry created
+        self.assertTrue(os.path.isfile(SYSFS_BOOT_ACL))
+
+        # Validate sysfs
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl)
+
+        output = subprocess.check_output(shlex.split("%s approve 0-101" % TBTADM))
+        self.assertEqual(len(open(SYSFS_BOOT_ACL).read().split(',')), 16)
+        log.debug(output)
+
+        boot_acl_added = self.add_boot_acl(boot_acl, UUID)
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_added)
+        log.debug("read boot_acl %s" % open(SYSFS_BOOT_ACL).read())
+
+        # Test removing UUID
+        output = subprocess.check_output(shlex.split("%s remove 0-101" % TBTADM))
+        log.debug("read boot_acl %s" % open(SYSFS_BOOT_ACL).read())
+
+        # Verify boot_acl after removing element
+        boot_acl_deleted = self.del_boot_acl(boot_acl_added, UUID)
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_deleted)
+
+        # disconnect all devices
+        tree.disconnect(self.testbed)
+
+    # Test removing from boot_acl with non present entry to be removed
+    def test_11_preboot_acl_remove_not_present(self):
+        # connect all device
+        UUID = '00000000-0000-0000-0000-000000000001'
+        device2 = TbDevice("0-101", uid = UUID)
+        device1 = TbDevice("0-1", children = [device2])
+        tree = TbDomain(host = TbHost([device1]))
+        tree.connect_tree(self.testbed)
+
+        SYSFS_BOOT_ACL = SYSFS + "/devices/domain0/boot_acl"
+
+        # Generate uuid comma separated list
+        boot_acl = self.generate_boot_acl(
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()))
+
+        self.assertEqual(len(boot_acl.split(',')), 16)
+        log.debug(boot_acl)
+
+        # Add new attribute to domain tree
+        tree.testbed.set_attribute(tree.syspath, "boot_acl", boot_acl)
+
+        # Test that sysfs entry created
+        self.assertTrue(os.path.isfile(SYSFS_BOOT_ACL))
+
+        # Validate sysfs
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl)
+
+        output = subprocess.check_output(shlex.split("%s approve 0-101" % TBTADM))
+        self.assertEqual(len(open(SYSFS_BOOT_ACL).read().split(',')), 16)
+        log.debug(output)
+
+        boot_acl_added = self.add_boot_acl(boot_acl, UUID)
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_added)
+
+        # Simulate boot_acl without added device
+        tree.testbed.set_attribute(tree.syspath, "boot_acl", boot_acl)
+
+        # Test removing UUID
+        output = subprocess.check_output(shlex.split("%s remove 0-101" % TBTADM))
+        log.debug(output)
+
+        log.debug("read boot_acl %s" % open(SYSFS_BOOT_ACL).read())
+
+        # Verify boot_acl after removing element
+        boot_acl_deleted = self.del_boot_acl(boot_acl, UUID)
+        self.assertEqual(open(SYSFS_BOOT_ACL).read(), boot_acl_deleted)
+
+        # disconnect all devices
+        tree.disconnect(self.testbed)
+
+    # Test multi controllers with preboot_acl
+    def test_12_preboot_acl_multi_controller(self):
+        # connect all device
+        # First controller
+        UUID = '00000000-0000-0000-0000-000000000001'
+        device2 = TbDevice("0-101")
+        device1 = TbDevice("0-1", uid = UUID, children = [device2])
+        tree1 = TbDomain(host = TbHost([device1]))
+
+        # Second controller
+        device3 = TbDevice("1-1")
+        tree2 = TbDomain(host = TbHost([device3], index = 1), index = 1)
+
+        tree1.connect_tree(self.testbed)
+        tree2.connect_tree(self.testbed)
+
+        SYSFS_DOMAIN0_BOOT_ACL = SYSFS + "/devices/domain0/boot_acl"
+        SYSFS_DOMAIN1_BOOT_ACL = SYSFS + "/devices/domain1/boot_acl"
+
+        # Generate uuid comma separated list
+        boot_acl = self.generate_boot_acl(
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()),
+                str(uuid.uuid4()))
+
+        self.assertEqual(len(boot_acl.split(',')), 16)
+        log.debug(boot_acl)
+
+        # Add new attribute to domain trees
+        tree1.testbed.set_attribute(tree1.syspath, "boot_acl", boot_acl)
+        tree2.testbed.set_attribute(tree2.syspath, "boot_acl", boot_acl)
+
+        # Test that sysfs entry created for each domain
+        self.assertTrue(os.path.isfile(SYSFS_DOMAIN0_BOOT_ACL))
+        self.assertTrue(os.path.isfile(SYSFS_DOMAIN1_BOOT_ACL))
+
+        # Validate sysfs
+        self.assertEqual(open(SYSFS_DOMAIN0_BOOT_ACL).read(), boot_acl)
+        self.assertEqual(open(SYSFS_DOMAIN1_BOOT_ACL).read(), boot_acl)
+
+        subprocess.run(shlex.split("%s topology" % TBTADM))
+
+        output = subprocess.check_output(shlex.split("%s approve 0-1" % TBTADM))
+        log.debug(output)
+        self.assertEqual(len(open(SYSFS_DOMAIN0_BOOT_ACL).read().split(',')), 16)
+
+        boot_acl_added = self.add_boot_acl(boot_acl, UUID)
+        self.assertEqual(open(SYSFS_DOMAIN0_BOOT_ACL).read(), boot_acl_added)
+        self.assertEqual(open(SYSFS_DOMAIN1_BOOT_ACL).read(), boot_acl_added)
+
+        log.debug(open(SYSFS_DOMAIN0_BOOT_ACL).read())
+        log.debug(open(SYSFS_DOMAIN1_BOOT_ACL).read())
+
+        # Test removing from boot_acl for every domain
+        output = subprocess.check_output(shlex.split("%s remove 0-1" % TBTADM))
+        self.assertEqual(len(open(SYSFS_DOMAIN0_BOOT_ACL).read().split(',')), 16)
+        self.assertEqual(len(open(SYSFS_DOMAIN1_BOOT_ACL).read().split(',')), 16)
+        log.debug(output)
+
+        log.debug(open(SYSFS_DOMAIN0_BOOT_ACL).read())
+        log.debug(open(SYSFS_DOMAIN1_BOOT_ACL).read())
+
+        # Verify boot_acl after removing element
+        boot_acl_deleted = self.del_boot_acl(boot_acl_added, UUID)
+        self.assertEqual(open(SYSFS_DOMAIN0_BOOT_ACL).read(), boot_acl_deleted)
+        self.assertEqual(open(SYSFS_DOMAIN1_BOOT_ACL).read(), boot_acl_deleted)
+
         tree1.disconnect(self.testbed)
         tree2.disconnect(self.testbed)
 
