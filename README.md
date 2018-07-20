@@ -35,6 +35,8 @@ handling the ACL and more.
 - Ubuntu* 16.04 and 17.04
 - Fedora* 26
 - Clear Linux*
+- SUSE Linux Enterprise(SLE)* 15
+- openSUSE Tumbleweed*
 
 
 ## Kernel/Daemon Compatibility
@@ -65,6 +67,9 @@ command:
 
 On Fedora, use this:  
 `dnf install cmake boost-devel txt2tags`
+
+on SLE15 and openSUSE Tumbleweed
+`zypper in txt2tags libboost_filesystem-devel cmake`
 
 ### Building
 Use the CMakeLists.txt file found in the root directory to build the project.
