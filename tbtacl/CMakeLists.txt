@@ -3,7 +3,6 @@ project(${TBTACL}-write VERSION 0.1 LANGUAGES CXX)
 set(TBTACL_RULES "${RULES_PREFIX}-${TBTACL}.rules")
 
 add_executable(${PROJECT_NAME} "write.cpp")
-target_link_libraries(${PROJECT_NAME} PRIVATE common)
 
 target_compile_options(${PROJECT_NAME} PRIVATE
 	$<$<COMPILE_LANGUAGE:CXX>:${TBT_CXXFLAGS}>)

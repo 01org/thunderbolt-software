@@ -13,9 +13,6 @@ RUN apt-get update -q && apt-get install -y \
     udev \
     libudev-dev \
     libgudev-1.0-dev \
-    valac \
-    autoconf \
-    automake \
     libtool \
     libglib2.0-dev \
     cmake \

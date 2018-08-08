@@ -29,7 +29,7 @@
 * POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "file.h"
+#include <fstream>
 
 /*
  * The reason for this file, instead of writing the file directly from tbtacl
@@ -43,7 +43,7 @@
 
 int main(int /*argc*/, char* argv[]) try
 {
-    tbtadm::File file(argv[2], tbtadm::File::Mode::Write);
+    std::ofstream file(argv[2]);
     file << std::string(argv[1]);
 }
 catch (std::system_error& e)

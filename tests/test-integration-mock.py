@@ -22,6 +22,7 @@
 
 import binascii
 import os
+import stat
 import shutil
 import sys
 import subprocess
@@ -439,6 +440,7 @@ class thunderbolt_test(unittest.TestCase):
         self.assertFalse(os.path.isdir(ACL + "/" + uuid))
 
         output = subprocess.check_output(shlex.split("%s approve 0-1" % TBTADM))
+        log.debug(output)
         self.assertTrue(b'Authorized' in output)
         self.assertTrue(b'Added to ACL' in output)
 
@@ -536,6 +538,11 @@ class thunderbolt_test(unittest.TestCase):
         ls = os.listdir(ACL + "/" + uuid)
         ls.sort()
         self.assertTrue(ls == ['device_name', 'key','vendor_name'])
+
+        # Verify correct file permissions
+        mode = oct(os.stat(ACL + "/" + uuid + "/" + "key").st_mode & 0o777)
+        log.debug(mode)
+        self.assertEqual(mode, oct(stat.S_IRUSR))
 
         # disconnect all devices
         tree.disconnect(self.testbed)

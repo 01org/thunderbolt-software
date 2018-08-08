@@ -32,13 +32,15 @@
 #include "controller.h"
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <random>
 #include <iterator>
 #include <algorithm>
+#include <unistd.h>
 
-#include "file.h"
+#include <fcntl.h> // for O_RDONLY, O_WRONLY
 
 using namespace std::string_literals;
 
@@ -114,9 +116,12 @@ private:
 
 std::string read(const fs::path& path)
 {
-    tbtadm::File file(path, tbtadm::File::Mode::Read);
-    auto content = file.read();
-    return content;
+    std::ifstream file(path.string());
+    std::string line;
+
+    getline(file, line);
+
+    return line;
 }
 
 /* Trim right characters */
@@ -399,13 +404,11 @@ void tbtadm::Controller::peers()
             continue;
         }
 
-        chdir(dir.path());
-
         // TODO: better formatting
         const auto routeString = dir.path().filename().string();
 
-        m_out << routeString << '\t' << readVendor(vendorFilename) << '\t'
-              << readDevice(deviceFilename) << std::endl;
+        m_out << routeString << '\t' << readVendor(dir.path() / vendorFilename)
+              << '\t' << readDevice(dir.path() / deviceFilename) << std::endl;
     }
 }
 
@@ -627,8 +630,10 @@ void tbtadm::Controller::approve(const fs::path& dir) try
 {
     m_out << "Authorizing " << dir << '\n';
 
-    File authorized(dir / authorizedFilename, File::Mode::Read);
-    if (std::stoi(authorized.read()))
+    std::fstream authorized((dir / authorizedFilename).string());
+    std::string line;
+    getline(authorized, line);
+    if (std::stoi(line))
     {
         m_out << "Already authorized\n";
         return;
@@ -649,20 +654,23 @@ void tbtadm::Controller::approve(const fs::path& dir) try
             return dist(eng);
         });
 
-        File key(dir / keyFilename, File::Mode::Write);
+        std::ofstream key((dir / keyFilename).string());
         key << keyStream.str();
     }
 
-    authorized = File(dir / authorizedFilename, File::Mode::Write);
+    authorized.clear();
     authorized << 1;
 
     m_out << "Authorized\n";
     if (m_sl == SECURITY_LEVEL_SECURE && !m_once)
     {
-        File keyACL(acltree / readAndTrim(dir / uniqueIDFilename) / keyFilename,
-                    File::Mode::Write,
-                    O_CREAT,
-                    S_IRUSR);
+        auto fn = acltree / readAndTrim(dir / uniqueIDFilename) / keyFilename;
+
+        /* Open with Linux system call since C++ cannot handle it */
+        int fd = open(fn.string().c_str(), O_WRONLY | O_CREAT, S_IRUSR);
+        close(fd);
+
+        std::ofstream keyACL(fn.string());
         keyACL << keyStream.str();
         m_out << "Key saved in ACL\n";
     }
@@ -718,9 +726,9 @@ void tbtadm::Controller::acl()
             {
                 continue;
             }
-            File authorizedFile(dir.path() / authorizedFilename,
-                                File::Mode::Read);
-            bool authorized = std::stoi(authorizedFile.read());
+
+            bool authorized =
+                std::stoi(readAndTrim(dir.path() / authorizedFilename));
             std::string uuid(readAndTrim(dir.path() / uniqueIDFilename));
             uuids.insert(std::make_pair(uuid, authorized));
         }

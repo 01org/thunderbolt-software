@@ -15,7 +15,12 @@ set(RULES_PREFIX   "60"                             CACHE PATH "The numeric pref
 
 set(TBT_CXXFLAGS ${CXX_FLAGS} -Wall -Wextra)
 
-add_subdirectory(common)
+option(use-std-filesystem "use-std-filesystem" OFF)
+
+if (use-std-filesystem)
+add_definitions(-DUSE_STD_FS)
+endif (use-std-filesystem)
+
 add_subdirectory(tbtacl)
 add_subdirectory(tbtxdomain)
 add_subdirectory(tbtadm)

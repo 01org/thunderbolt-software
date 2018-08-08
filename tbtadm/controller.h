@@ -34,9 +34,15 @@
 #include <iosfwd>
 #include <map>
 
-#include <boost/filesystem.hpp>
 
+#ifdef USE_STD_FS
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#else
+#include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
+#endif
+
 
 namespace tbtadm
 {
